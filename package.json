@@ -1,7 +1,7 @@
 {
   "name": "genthetic",
-  "version": "0.1.0",
-  "description": "Library for robust generation of realistic synthetic data using GenAI, Faker, and user customizations",
+  "version": "0.1.1",
+  "description": "Synthetic data generation combining GenAI and good old-fashioned coding.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,9 +11,16 @@
     "test": "pnpm exec tsx --test test/*.test.ts",
     "dev": "pnpm exec tsx"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "genai",
+    "ai",
+    "synthetic data",
+    "fake data",
+    "data generation",
+    "genkit"
+  ],
+  "author": "Michael Bleigh",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@9.15.5+sha256.8472168c3e1fd0bff287e694b053fccbbf20579a3ff9526b6333beab8df65a8d",
   "dependencies": {
     "@genkit-ai/ai": "^1.3.0",
