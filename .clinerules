@@ -1,0 +1,5 @@
+- Use Node.js stdlib test runner for unit tests.
+- Use `pnpm exec tsx` to execute TypeScript files.
+- Use `pnpm` for all dependency management.
+- Write tests for new functionality.
+- Run `pnpm test` after completing the task.
