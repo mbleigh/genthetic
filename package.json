@@ -1,13 +1,13 @@
 {
   "name": "genthetic",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Library for robust generation of realistic synthetic data using GenAI, Faker, and user customizations",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "build-tests": "tsc -p tsconfig.test.json",
+    "build:clean": "rm -rf dist && tsc",
     "test": "pnpm exec tsx --test test/*.test.ts",
     "dev": "pnpm exec tsx"
   },
@@ -27,5 +27,11 @@
     "@types/node": "^22.13.10",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "tsconfig.json"
+  ]
 }

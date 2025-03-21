@@ -1,6 +1,6 @@
 # Genthetic
 
-A powerful library for generating realistic synthetic data using a combination of AI (Google's Gemini models) and customizable data pipelines. Genthetic enables you to create high-quality synthetic datasets with control and flexibility.
+Generate realistic synthetic data using a combination of Google's Gemini AI models and customizable data pipelines. Genthetic enables you to create high-quality synthetic datasets with control and flexibility.
 
 - **Schema-based typing** - Define your data structure using Zod schemas
 - **AI-powered generation** - Leverage Google's Gemini models to create realistic, contextually-aware data
@@ -15,6 +15,8 @@ Install Genthetic using your preferred package manager:
 ```bash
 # Faker.js is a recommended companion to Genthetic
 npm install genthetic zod @faker-js/faker
+# Genthetic requires a Gemini API key to function
+export GEMINI_API_KEY=<your_api_key_here>
 ```
 
 ## Basic Usage
