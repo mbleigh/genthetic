@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { toJsonSchema } from "genkit/schema";
 import { generateSyntheticData } from "./generate.js";
+import { writeFileSync } from "node:fs";
 
 /**
  * Type that adds an optional __hints property to an object type
@@ -10,24 +11,48 @@ export type WithHints<T> = T & {
   __hints?: Record<string, any>;
 };
 
+function stripHints<T = unknown>(data: any[]): T[] {
+  // Strip __hints from final results
+  return data.map((item) => {
+    if (item && "__hints" in item) {
+      const { __hints, ...rest } = item as any;
+      return rest as T;
+    }
+    return item as T;
+  });
+}
+
+function writeData(file: string | undefined, data: any[]) {
+  if (!file) return;
+  writeFileSync(file, JSON.stringify(data, null, 2), { encoding: "utf8" });
+}
+
 /**
  * Recursively resolves an object with function values.
  * Returns a new object with all functions resolved to their return values.
+ *
+ * @param obj The object to resolve
+ * @param item Optional item to pass to functions (used in fill)
+ * @param context Optional context to pass to functions (used in fill)
  */
-export async function resolveObject<T>(obj: T): Promise<T> {
+export async function resolveObject<T, I = any, C = any>(
+  obj: T,
+  item?: I,
+  context?: C
+): Promise<T> {
   if (obj === null || typeof obj !== "object") {
     return obj;
   }
 
   if (Array.isArray(obj)) {
     return (await Promise.all(
-      obj.map(async (item) => {
-        if (typeof item === "function") {
-          return await Promise.resolve(item());
-        } else if (item !== null && typeof item === "object") {
-          return await resolveObject(item);
+      obj.map(async (arrayItem) => {
+        if (typeof arrayItem === "function") {
+          return await Promise.resolve(arrayItem(item, context));
+        } else if (arrayItem !== null && typeof arrayItem === "object") {
+          return await resolveObject(arrayItem, item, context);
         }
-        return item;
+        return arrayItem;
       })
     )) as unknown as T;
   }
@@ -39,13 +64,13 @@ export async function resolveObject<T>(obj: T): Promise<T> {
 
     if (typeof value === "function") {
       // Resolve the function, which may return a promise
-      result[key] = await Promise.resolve(value());
+      result[key] = await Promise.resolve(value(item, context));
     } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
       // Handle nested objects recursively
-      result[key] = await resolveObject(value);
+      result[key] = await resolveObject(value, item, context);
     } else if (Array.isArray(value)) {
       // Handle arrays by resolving each item
-      result[key] = await resolveObject(value);
+      result[key] = await resolveObject(value, item, context);
     } else {
       // Copy primitive values directly
       result[key] = value;
@@ -61,6 +86,7 @@ export interface StageContext<T extends object> {
   batches: number;
   count: number;
   type: TypeDefinition<T>;
+  previousData?: Partial<WithHints<T>>[];
 }
 
 // Options for defining a type
@@ -76,6 +102,7 @@ export interface GenerateOptions {
   fields?: string[];
   instructions?: string;
   model?: string;
+  unique?: boolean;
 }
 
 export type StageFn<T extends object = Record<string, any>> = (
@@ -86,6 +113,7 @@ export type StageFn<T extends object = Record<string, any>> = (
 export interface Stage<T extends object = Record<string, any>> {
   name?: string;
   run: StageFn<T>;
+  cacheOutput?: boolean;
 }
 
 // Options for synthesis
@@ -105,7 +133,22 @@ export interface SynthesizeOptions {
 
   // control logging verbosity
   logging?: "none" | "warning" | "info" | "debug";
+
+  /** An output file to write results to. Incrementally updated as batches come in. */
+  outFile?: string;
 }
+
+export type FillShape<T extends object> = Partial<
+  Record<
+    keyof WithHints<T>,
+    | object
+    | Array<any>
+    | number
+    | boolean
+    | string
+    | ((item: WithHints<Partial<T>>, context: StageContext<T>) => any | Promise<any>)
+  >
+>;
 
 // Type definition class with fluent API
 export class TypeDefinition<T extends object = Record<string, any>> {
@@ -135,11 +178,11 @@ export class TypeDefinition<T extends object = Record<string, any>> {
    * @param data Data to fill
    * @param hints Hints to include (will be added to __hints property)
    */
-  fill(name: string, data: Partial<WithHints<Record<keyof T, any>>>): this;
-  fill(shape: Partial<WithHints<Record<keyof T, any>>>): this;
+  fill(name: string, data: FillShape<T>): this;
+  fill(shape: FillShape<T>): this;
   fill(
     nameOrShape: string | Partial<Record<keyof T, any>>,
-    shapeArg?: Partial<WithHints<Record<keyof T, any>>> | Record<string, any>
+    shapeArg?: FillShape<T> | Record<string, any>
   ): this {
     // Handle the different parameter combinations
     let shape: Partial<Record<keyof T, any>>;
@@ -148,58 +191,86 @@ export class TypeDefinition<T extends object = Record<string, any>> {
     if (typeof nameOrShape === "string") {
       // Case: fill(name, data, hints?)
       name = nameOrShape;
-      shape = shapeArg as Partial<Record<keyof T, any>>;
+      shape = shapeArg as FillShape<T>;
     } else {
       // Case: fill(shape, hints?)
       name = undefined;
       shape = nameOrShape;
     }
 
-    const resolveFills: StageFn<T> = async (batch, context) => {
+    const fillFn: StageFn<T> = async (batch, context) => {
       return await Promise.all(
         batch.map(async (item) => {
           // Resolve the shape object to get all function values resolved
-          const resolvedShape = await resolveObject(shape);
-          return resolveObject(resolvedShape);
+          const resolvedShape = await resolveObject(shape, item, context);
+          return resolveObject(resolvedShape, item, context);
         })
       );
     };
 
-    this.stage(name, async (batch, context) => {
-      return resolveFills(batch, context);
+    // Add the stage directly
+    this.stages.push({
+      name,
+      run: fillFn,
     });
 
     return this;
   }
 
   /**
-   * Configure the AI generation phase (placeholder for now)
+   * Configure the AI generation phase
    */
-  generate(options: GenerateOptions): this {
-    this.stage(async (batch, context) => {
-      const generatedData = (await generateSyntheticData({
-        data: batch,
-        count: batch.length,
-        fields: options.fields,
-        instructions: options.instructions,
-        model: options.model,
-        schema: this.jsonSchema,
-      })) as WithHints<Partial<T>>[];
+  generate(options?: GenerateOptions): this {
+    this.stage(
+      async (batch, context) => {
+        const generatedData = (await generateSyntheticData({
+          data: batch,
+          count: batch.length,
+          fields: options?.fields,
+          instructions: options?.instructions,
+          model: options?.model,
+          schema: this.jsonSchema,
+          existingData: options?.unique ? context.previousData : undefined,
+        })) as WithHints<Partial<T>>[];
 
-      return batch.map((item, i) => ({ ...item, ...generatedData[i] }));
-    });
+        return batch.map((item, i) => ({ ...item, ...generatedData[i] }));
+      },
+      { cacheOutput: !!options?.unique }
+    );
     return this;
   }
 
   /**
    * Add a post-processing stage to the pipeline
    */
-  stage(name: string | undefined, fn: StageFn<T>): this;
-  stage(fn: StageFn<T>): this;
-  stage(nameOrFn?: string | StageFn<T>, fn?: StageFn<T>): this {
+  stage(name: string | undefined, fn: StageFn<T>, options?: { cacheOutput?: boolean }): this;
+  stage(fn: StageFn<T>, options?: { cacheOutput?: boolean }): this;
+  stage(
+    nameOrFn?: string | StageFn<T>,
+    fnOrOptions?: StageFn<T> | { cacheOutput?: boolean },
+    optionsArg?: { cacheOutput?: boolean }
+  ): this {
+    // Handle the different parameter combinations
+    let name: string | undefined;
+    let fn: StageFn<T>;
+    let options: { cacheOutput?: boolean } | undefined;
+
+    if (typeof nameOrFn === "string") {
+      // Case: stage(name, fn, options?)
+      name = nameOrFn;
+      fn = fnOrOptions as StageFn<T>;
+      options = optionsArg;
+    } else {
+      // Case: stage(fn, options?)
+      name = undefined;
+      fn = nameOrFn as StageFn<T>;
+      options = fnOrOptions as { cacheOutput?: boolean } | undefined;
+    }
+
     this.stages.push({
-      name: fn ? (nameOrFn as string) : undefined,
-      run: fn || (nameOrFn as StageFn<T>),
+      name,
+      run: fn,
+      cacheOutput: options?.cacheOutput,
     });
     return this;
   }
@@ -300,6 +371,9 @@ export class Genthetic {
     const generatePromise = async (): Promise<T[]> => {
       const results: Partial<WithHints<T>>[] = [];
 
+      // Cache for stage outputs across batches
+      const cachedStageOutputs: Partial<WithHints<T>>[][] = [];
+
       // Process each batch
       for (let batchNumber = 0; batchNumber < totalBatches; batchNumber++) {
         const isLastBatch = batchNumber === totalBatches - 1;
@@ -334,6 +408,7 @@ export class Genthetic {
           batches: totalBatches,
           count: totalCount,
           type: typeDefinition,
+          previousData: cachedStageOutputs.flat(), // Provide all previously cached data
         };
 
         // Run each stage
@@ -344,7 +419,27 @@ export class Genthetic {
 
           // Run the stage
           try {
-            currentBatch = await Promise.resolve(stage.run(currentBatch, context));
+            if (typeof stage.run === "function") {
+              currentBatch = await Promise.resolve(stage.run(currentBatch, context));
+            } else {
+              throw new Error(`Stage ${stageIndex} does not have a valid run function`);
+            }
+
+            // Cache the output if this stage has cacheOutput enabled
+            if (stage.cacheOutput) {
+              if (!cachedStageOutputs[stageIndex]) {
+                cachedStageOutputs[stageIndex] = [];
+              }
+              cachedStageOutputs[stageIndex].push(...currentBatch);
+
+              if (loggingLevel === "debug") {
+                console.log(
+                  `\x1b[36m💾 [Genthetic] Cached output for stage ${stageIndex + 1} (${
+                    cachedStageOutputs[stageIndex].length
+                  } items total)\x1b[0m`
+                );
+              }
+            }
 
             // Log debug info for stage completion
             if (loggingLevel === "debug") {
@@ -382,6 +477,7 @@ export class Genthetic {
         // Add batch results to total results
         results.push(...currentBatch);
         options.onBatch?.(currentBatch, { batchNumber: batchNumber });
+        writeData(options?.outFile, stripHints<T>(results));
 
         // Log batch completion for info/debug level
         if (loggingLevel === "info" || loggingLevel === "debug") {
@@ -411,14 +507,9 @@ export class Genthetic {
         );
       }
 
-      // Strip __hints from final results
-      return results.map((item) => {
-        if (item && "__hints" in item) {
-          const { __hints, ...rest } = item as any;
-          return rest as T;
-        }
-        return item as T;
-      });
+      const strippedResults = stripHints<T>(results);
+      writeData(options?.outFile, strippedResults);
+      return strippedResults;
     };
 
     return {

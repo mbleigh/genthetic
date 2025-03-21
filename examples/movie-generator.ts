@@ -33,10 +33,9 @@ const MovieSynth = synth
   .defineType<z.infer<typeof MovieSchema>>({
     name: "Movie",
     schema: MovieSchema,
-    batchSize: 20,
   })
   .fill({
-    genre: () => faker.helpers.arrayElement(GENRES),
+    genre: (_, context) => GENRES[context.batchNumber],
     releaseDate: () =>
       faker.helpers
         .weightedArrayElement<Date>([
@@ -48,7 +47,6 @@ const MovieSynth = synth
         .substring(0, 10),
     director: () => faker.person.fullName(),
     __hints: {
-      keyword: () => faker.animal.type(),
       budget: () =>
         faker.helpers.arrayElement(["indie", "mid-budget", "blockbuster", "franchise tentpole"]),
       reception: () =>
@@ -79,11 +77,13 @@ async function main() {
 
   // Create a synthesis job for 100 movies
   const job = synth.synthesize(MovieSynth, {
-    count: 100,
+    batches: GENRES.length,
+    batchSize: 20,
     onBatch: (batch, { batchNumber }) => {
-      console.log("Example from batch", batchNumber, batch[0]);
+      console.log("🎬 Movies Generated:", batch.map((i) => i.title).join(", "));
     },
     logging: "debug",
+    outFile: "examples/movies.json",
   });
 
   console.log("Tracking progress via onProgress callback...");
