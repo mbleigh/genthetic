@@ -1,6 +1,5 @@
 import { genkit, z } from "genkit";
 import { gemini20Flash, googleAI } from "@genkit-ai/googleai";
-import { ExecutablePrompt } from "@genkit-ai/ai";
 
 const ai = genkit({
   model: gemini20Flash,
@@ -38,7 +37,7 @@ export const generateSyntheticData = ai.defineFlow(
         )}`
       : "";
 
-    if (!existingData) prompt += seedPrompt;
+    if (!existingData?.length) prompt += seedPrompt;
 
     if (hasHints)
       prompt += `\n\n## Hints\n\nItems in the provided data may include a "__hints" field. These are generation hints that you should keep in mind when generating the corresponding output data for that item only. The hints are purely informational and will not show up in the final result. The generated data should be guided both by the hints AND the partial data that has been provided.`;
@@ -53,11 +52,9 @@ export const generateSyntheticData = ai.defineFlow(
       }
       newSchema.properties = newProps;
       newSchema.required = fields;
-    } else {
-      newSchema.required = [];
     }
 
-    const messages = existingData
+    const messages = existingData?.length
       ? [
           { role: "user" as const, content: [{ text: prompt }] },
           { role: "model" as const, content: [{ text: JSON.stringify(existingData) }] },

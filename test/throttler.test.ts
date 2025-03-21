@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Throttler } from "../throttler.js";
+import { Throttler } from "../src/throttler.js";
 
 describe("Throttler", () => {
   let throttler: Throttler;

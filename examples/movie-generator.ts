@@ -62,7 +62,6 @@ const MovieSynth = synth
   })
   .generate({
     fields: ["title", "description"],
-    instructions: "Use the hinted 'keyword' in the title.",
   })
   .stage((batch, context) =>
     batch.map((item) => ({

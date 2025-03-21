@@ -9,6 +9,7 @@ const PersonSchema = z.object({
   age: z.number(),
   occupation: z.string(),
   location: z.string(),
+  favoriteColor: z.string(),
 });
 
 const PersonSynth = g
@@ -16,16 +17,13 @@ const PersonSynth = g
     name: "Person",
     schema: PersonSchema,
   })
-  .generate({ unique: true });
+  .generate({ unique: true, instructions: "use characters from Arrested Development" });
 
-async function main() {
-  const { complete } = g.synthesize(PersonSynth, {
-    batchSize: 5,
-    count: 20,
-    onBatch: (batch) => console.log(batch.map((item) => item.name)),
-    logging: "debug",
-  });
-  const people = await complete();
-  console.dir(people, { depth: null });
-}
-main();
+const { complete } = g.synthesize(PersonSynth, {
+  batchSize: 5,
+  count: 20,
+  onBatch: (batch) => console.log("🙎 Generated:", batch.map((item) => item.name).join(", ")),
+  logging: "debug",
+});
+const people = await complete();
+console.dir(people, { depth: null });

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { Genthetic, TypeDefinition } from "../genthetic.js";
+import { Genthetic } from "../src/genthetic.js";
 import { z } from "zod";
 
 describe("Genthetic", () => {

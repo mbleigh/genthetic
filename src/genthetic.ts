@@ -2,6 +2,7 @@ import { z } from "zod";
 import { toJsonSchema } from "genkit/schema";
 import { generateSyntheticData } from "./generate.js";
 import { writeFileSync } from "node:fs";
+import { Throttler } from "./throttler.js";
 
 /**
  * Type that adds an optional __hints property to an object type
@@ -136,6 +137,15 @@ export interface SynthesizeOptions {
 
   /** An output file to write results to. Incrementally updated as batches come in. */
   outFile?: string;
+
+  /** Maximum number of concurrent batch processing operations (default: 5) */
+  concurrency?: number;
+
+  /** Maximum number of retries for failed operations (default: 3) */
+  maxRetries?: number;
+
+  /** Base delay in milliseconds for retry backoff (default: 200) */
+  retryDelayMs?: number;
 }
 
 export type FillShape<T extends object> = Partial<
@@ -274,6 +284,15 @@ export class TypeDefinition<T extends object = Record<string, any>> {
     });
     return this;
   }
+
+  /**
+   * Synthesize data directly from this type definition
+   * @param options Options for synthesis
+   * @returns A synthesis job that can be used to track progress and get results
+   */
+  synthesize(options: SynthesizeOptions = {}): SynthesisJob<T> {
+    return this.genthetic.synthesize(this, options);
+  }
 }
 
 export interface SynthesisJobProgress {
@@ -367,6 +386,149 @@ export class Genthetic {
       },
     };
 
+    /**
+     * Process a single batch through all stages
+     */
+    const processBatch = async (
+      batchNumber: number,
+      cachedOutputs: Partial<WithHints<T>>[][]
+    ): Promise<Partial<WithHints<T>>[]> => {
+      const isLastBatch = batchNumber === totalBatches - 1;
+      const currentBatchSize = isLastBatch ? totalCount - batchNumber * batchSize : batchSize;
+
+      // Record batch start time
+      progressController.batchStartTime = Date.now();
+      const totalElapsedSeconds = (
+        (progressController.batchStartTime - progressController.startTime) /
+        1000
+      ).toFixed(2);
+
+      // Log batch start for info/debug level
+      if (loggingLevel === "info" || loggingLevel === "debug") {
+        const itemsGenerated = batchNumber * batchSize;
+        const percentComplete = Math.round((itemsGenerated / totalCount) * 100);
+        console.log(
+          `\x1b[34m🔄 [Genthetic] Batch ${
+            batchNumber + 1
+          }/${totalBatches} started (${percentComplete}% complete, ${itemsGenerated} items generated so far, total time: ${totalElapsedSeconds}s)\x1b[0m`
+        );
+      }
+
+      // Initialize empty objects for the batch
+      let currentBatch: Partial<WithHints<T>>[] = Array(currentBatchSize)
+        .fill(null)
+        .map(() => ({}));
+
+      // Setup the context object for this batch
+      const context: StageContext<T> = {
+        batchNumber,
+        batches: totalBatches,
+        count: totalCount,
+        type: typeDefinition,
+        previousData: cachedOutputs.flat(), // Provide all previously cached data
+      };
+
+      // Run each stage
+      for (let stageIndex = 0; stageIndex < typeDefinition.stages.length; stageIndex++) {
+        const stage = typeDefinition.stages[stageIndex];
+        progressController.currentProgress.currentBatch.stagesComplete = stageIndex;
+        progressController.emit();
+
+        // Run the stage
+        try {
+          if (typeof stage.run === "function") {
+            currentBatch = await Promise.resolve(stage.run(currentBatch, context));
+          } else {
+            throw new Error(`Stage ${stageIndex} does not have a valid run function`);
+          }
+
+          // Cache the output if this stage has cacheOutput enabled
+          if (stage.cacheOutput) {
+            if (!cachedOutputs[stageIndex]) {
+              cachedOutputs[stageIndex] = [];
+            }
+            cachedOutputs[stageIndex].push(...currentBatch);
+
+            if (loggingLevel === "debug") {
+              console.log(
+                `\x1b[36m💾 [Genthetic] Cached output for stage ${stageIndex + 1} (${
+                  cachedOutputs[stageIndex].length
+                } items total)\x1b[0m`
+              );
+            }
+          }
+
+          // Log debug info for stage completion
+          if (loggingLevel === "debug") {
+            const stageName = stage.name || `Stage ${stageIndex + 1}`;
+            const percentComplete = Math.round(
+              ((stageIndex + 1) / typeDefinition.stages.length) * 100
+            );
+            const stageTime = ((Date.now() - progressController.batchStartTime) / 1000).toFixed(2);
+            console.log(
+              `\x1b[36m🔧 [Genthetic] Batch ${
+                batchNumber + 1
+              }/${totalBatches} - ${stageName} completed (${percentComplete}% of batch processing, batch time so far: ${stageTime}s)\x1b[0m`
+            );
+          }
+        } catch (error) {
+          // Log warning if a retry would be needed
+          if (loggingLevel === "warning" || loggingLevel === "info" || loggingLevel === "debug") {
+            const stageName = stage.name || `Stage ${stageIndex + 1}`;
+            console.log(
+              `\x1b[33m⚠️ [Genthetic] WARNING: Error in Batch ${
+                batchNumber + 1
+              }/${totalBatches} - ${stageName} - retry would be needed\x1b[0m`
+            );
+          }
+          throw error; // Re-throw the error to be handled by the throttler if applicable
+        }
+
+        // Update progress
+        progressController.currentProgress.currentBatch.stagesComplete = stageIndex + 1;
+        progressController.emit();
+      }
+
+      // Log batch completion for info/debug level
+      if (loggingLevel === "info" || loggingLevel === "debug") {
+        const itemsGenerated = (batchNumber + 1) * batchSize;
+        const percentComplete = Math.min(100, Math.round((itemsGenerated / totalCount) * 100));
+        const batchTime = ((Date.now() - progressController.batchStartTime) / 1000).toFixed(2);
+        const totalTime = ((Date.now() - progressController.startTime) / 1000).toFixed(2);
+        console.log(
+          `\x1b[32m✅ [Genthetic] Batch ${
+            batchNumber + 1
+          }/${totalBatches} completed in ${batchTime}s (${percentComplete}% complete, ${
+            isLastBatch ? totalCount : itemsGenerated
+          } items generated so far, total time: ${totalTime}s)\x1b[0m`
+        );
+      }
+
+      return currentBatch;
+    };
+
+    /**
+     * Process batch results - add to results, call onBatch, write to file
+     */
+    const processBatchResults = (
+      batchNumber: number,
+      batch: Partial<WithHints<T>>[],
+      results: Partial<WithHints<T>>[]
+    ): void => {
+      // Add batch results to total results
+      results.push(...batch);
+
+      // Call onBatch callback if provided
+      options.onBatch?.(batch, { batchNumber });
+
+      // Write data to file if outFile is specified
+      writeData(options?.outFile, stripHints<T>(results));
+
+      // Update progress
+      progressController.currentProgress.batchesComplete = batchNumber + 1;
+      progressController.emit();
+    };
+
     // Create the actual data generation promise
     const generatePromise = async (): Promise<T[]> => {
       const results: Partial<WithHints<T>>[] = [];
@@ -374,129 +536,53 @@ export class Genthetic {
       // Cache for stage outputs across batches
       const cachedStageOutputs: Partial<WithHints<T>>[][] = [];
 
-      // Process each batch
-      for (let batchNumber = 0; batchNumber < totalBatches; batchNumber++) {
-        const isLastBatch = batchNumber === totalBatches - 1;
-        const currentBatchSize = isLastBatch ? totalCount - batchNumber * batchSize : batchSize;
+      // Check if any stage requires cacheOutput (which requires sequential processing)
+      const requiresSerialProcessing = typeDefinition.stages.some((stage) => stage.cacheOutput);
 
-        // Record batch start time
-        progressController.batchStartTime = Date.now();
-        const totalElapsedSeconds = (
-          (progressController.batchStartTime - progressController.startTime) /
-          1000
-        ).toFixed(2);
-
-        // Log batch start for info/debug level
+      if (requiresSerialProcessing) {
+        // Serial processing mode - required when any stage has cacheOutput: true
         if (loggingLevel === "info" || loggingLevel === "debug") {
-          const itemsGenerated = batchNumber * batchSize;
-          const percentComplete = Math.round((itemsGenerated / totalCount) * 100);
           console.log(
-            `\x1b[34m🔄 [Genthetic] Batch ${
-              batchNumber + 1
-            }/${totalBatches} started (${percentComplete}% complete, ${itemsGenerated} items generated so far, total time: ${totalElapsedSeconds}s)\x1b[0m`
+            `\x1b[34m🔄 [Genthetic] Using serial processing mode (cacheOutput required)\x1b[0m`
           );
         }
 
-        // Initialize empty objects for the batch
-        let currentBatch: Partial<WithHints<T>>[] = Array(currentBatchSize)
-          .fill(null)
-          .map(() => ({}));
-
-        // Setup the context object for this batch
-        const context: StageContext<T> = {
-          batchNumber,
-          batches: totalBatches,
-          count: totalCount,
-          type: typeDefinition,
-          previousData: cachedStageOutputs.flat(), // Provide all previously cached data
-        };
-
-        // Run each stage
-        for (let stageIndex = 0; stageIndex < typeDefinition.stages.length; stageIndex++) {
-          const stage = typeDefinition.stages[stageIndex];
-          progressController.currentProgress.currentBatch.stagesComplete = stageIndex;
-          progressController.emit();
-
-          // Run the stage
-          try {
-            if (typeof stage.run === "function") {
-              currentBatch = await Promise.resolve(stage.run(currentBatch, context));
-            } else {
-              throw new Error(`Stage ${stageIndex} does not have a valid run function`);
-            }
-
-            // Cache the output if this stage has cacheOutput enabled
-            if (stage.cacheOutput) {
-              if (!cachedStageOutputs[stageIndex]) {
-                cachedStageOutputs[stageIndex] = [];
-              }
-              cachedStageOutputs[stageIndex].push(...currentBatch);
-
-              if (loggingLevel === "debug") {
-                console.log(
-                  `\x1b[36m💾 [Genthetic] Cached output for stage ${stageIndex + 1} (${
-                    cachedStageOutputs[stageIndex].length
-                  } items total)\x1b[0m`
-                );
-              }
-            }
-
-            // Log debug info for stage completion
-            if (loggingLevel === "debug") {
-              const stageName = stage.name || `Stage ${stageIndex + 1}`;
-              const percentComplete = Math.round(
-                ((stageIndex + 1) / typeDefinition.stages.length) * 100
-              );
-              const stageTime = ((Date.now() - progressController.batchStartTime) / 1000).toFixed(
-                2
-              );
-              console.log(
-                `\x1b[36m🔧 [Genthetic] Batch ${
-                  batchNumber + 1
-                }/${totalBatches} - ${stageName} completed (${percentComplete}% of batch processing, batch time so far: ${stageTime}s)\x1b[0m`
-              );
-            }
-          } catch (error) {
-            // Log warning if a retry would be needed
-            if (loggingLevel === "warning" || loggingLevel === "info" || loggingLevel === "debug") {
-              const stageName = stage.name || `Stage ${stageIndex + 1}`;
-              console.log(
-                `\x1b[33m⚠️ [Genthetic] WARNING: Error in Batch ${
-                  batchNumber + 1
-                }/${totalBatches} - ${stageName} - retry would be needed\x1b[0m`
-              );
-            }
-            throw error; // Re-throw since retries are not implemented yet
-          }
-
-          // Update progress
-          progressController.currentProgress.currentBatch.stagesComplete = stageIndex + 1;
-          progressController.emit();
+        // Process each batch sequentially
+        for (let batchNumber = 0; batchNumber < totalBatches; batchNumber++) {
+          const batch = await processBatch(batchNumber, cachedStageOutputs);
+          processBatchResults(batchNumber, batch, results);
         }
-
-        // Add batch results to total results
-        results.push(...currentBatch);
-        options.onBatch?.(currentBatch, { batchNumber: batchNumber });
-        writeData(options?.outFile, stripHints<T>(results));
-
-        // Log batch completion for info/debug level
+      } else {
+        // Parallel processing mode with throttling
+        const concurrency = options.concurrency ?? 5;
         if (loggingLevel === "info" || loggingLevel === "debug") {
-          const itemsGenerated = (batchNumber + 1) * batchSize;
-          const percentComplete = Math.min(100, Math.round((itemsGenerated / totalCount) * 100));
-          const batchTime = ((Date.now() - progressController.batchStartTime) / 1000).toFixed(2);
-          const totalTime = ((Date.now() - progressController.startTime) / 1000).toFixed(2);
           console.log(
-            `\x1b[32m✅ [Genthetic] Batch ${
-              batchNumber + 1
-            }/${totalBatches} completed in ${batchTime}s (${percentComplete}% complete, ${
-              isLastBatch ? totalCount : itemsGenerated
-            } items generated so far, total time: ${totalTime}s)\x1b[0m`
+            `\x1b[34m🔄 [Genthetic] Using parallel processing mode (concurrency: ${concurrency})\x1b[0m`
           );
         }
 
-        // Update batch progress
-        progressController.currentProgress.batchesComplete = batchNumber + 1;
-        progressController.emit();
+        // Create throttler for concurrent batch processing
+        const throttler = new Throttler({
+          concurrency: options.concurrency,
+          maxRetries: options.maxRetries,
+          baseRetryDelayMs: options.retryDelayMs,
+          debug: loggingLevel === "debug",
+        });
+
+        // Queue all batches for processing
+        const batchPromises: Promise<Partial<WithHints<T>>[]>[] = [];
+
+        for (let batchNumber = 0; batchNumber < totalBatches; batchNumber++) {
+          // Create a closure to capture the correct batch number
+          const promise = throttler.run(() => processBatch(batchNumber, cachedStageOutputs));
+          batchPromises.push(promise);
+        }
+
+        // Process results in order (important to maintain batch order)
+        for (let batchNumber = 0; batchNumber < totalBatches; batchNumber++) {
+          const batch = await batchPromises[batchNumber];
+          processBatchResults(batchNumber, batch, results);
+        }
       }
 
       // Log completion of all batches
