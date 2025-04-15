@@ -54,7 +54,7 @@ const PersonSynth = g
   });
 
 // Synthesize 20 people in batches of 5
-const { complete } = PersonSynth.synthesize(PersonSynth, {
+const { complete } = PersonSynth.synthesize({
   batchSize: 5,
   count: 20,
   onBatch: (batch) => console.log("🙎 Generated:", batch.map((item) => item.name).join(", ")),
