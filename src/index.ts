@@ -1,4 +1,5 @@
 export { Genthetic, TypeDefinition } from "./genthetic.js";
+export { z } from "genkit";
 export type {
   FillShape,
   GenerateOptions,

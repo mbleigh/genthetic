@@ -1,8 +1,8 @@
 import { genkit, z } from "genkit";
-import { gemini20Flash, googleAI } from "@genkit-ai/googleai";
+import { googleAI } from "@genkit-ai/google-genai";
 
 const ai = genkit({
-  model: gemini20Flash,
+  model: googleAI.model(process.env.GEMINI_MODEL || "gemini-2.5-flash"),
   plugins: [googleAI()],
 });
 
@@ -33,7 +33,7 @@ export const generateSyntheticData = ai.defineFlow(
       ? `\n\n## Partial Data\n\nUse the following data as the basis for your generation. You will generate one object corresponding to each of the objects in the supplied data. The generated objects should contain plausible fields based on the provided data. You MUST generate exactly the same number of objects as are supplied here. You will generate only new unique fields without copying the existing ones. The data you generate will be combined with the existing data to create the final result.\n\n${JSON.stringify(
           data,
           null,
-          2
+          2,
         )}`
       : "";
 
@@ -82,7 +82,7 @@ export const generateSyntheticData = ai.defineFlow(
     });
 
     return output;
-  }
+  },
 );
 
 export const generateSyntheticField = ai.defineFlow(
@@ -95,5 +95,5 @@ export const generateSyntheticField = ai.defineFlow(
     }),
     outputSchema: z.object({}),
   },
-  async () => {}
+  async () => {},
 );

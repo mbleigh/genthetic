@@ -2,8 +2,8 @@
   "name": "genthetic",
   "version": "0.1.2",
   "description": "Synthetic data generation combining GenAI and good old-fashioned coding.",
-  "type": "commonjs",
-  "main": "dist/index.cjs",
+  "type": "module",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup-node",
@@ -23,8 +23,8 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@9.15.5+sha256.8472168c3e1fd0bff287e694b053fccbbf20579a3ff9526b6333beab8df65a8d",
   "dependencies": {
-    "@genkit-ai/googleai": "^1.2.0",
-    "genkit": "^1.2.0"
+    "@genkit-ai/google-genai": "^1.20.0",
+    "genkit": "^1.20.0"
   },
   "peerDependencies": {
     "zod": "^3.24.2"
@@ -44,10 +44,8 @@
   ],
   "exports": {
     ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   }
 }

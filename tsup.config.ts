@@ -1,13 +1,13 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from "tsup";
 
 export default defineConfig({
-  format: ['cjs', 'esm'],
+  format: ["esm"],
   dts: true,
   sourcemap: true,
   clean: true,
   shims: true,
-  outDir: 'dist',
-  entry: ['src/**/*.ts'],
+  outDir: "dist",
+  entry: ["src/**/*.ts"],
   bundle: false,
   treeshake: false,
 });

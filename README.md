@@ -24,8 +24,7 @@ export GEMINI_API_KEY=<your_api_key_here>
 Here's a simple example of creating a list of synthetic contacts:
 
 ```typescript
-import { z } from "zod";
-import { Genthetic } from "genthetic";
+import { Genthetic, z } from "genthetic";
 
 // Initialize Genthetic
 const g = new Genthetic();
