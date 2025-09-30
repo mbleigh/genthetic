@@ -1,6 +1,6 @@
 {
   "name": "genthetic",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Synthetic data generation combining GenAI and good old-fashioned coding.",
   "type": "module",
   "main": "dist/index.js",
