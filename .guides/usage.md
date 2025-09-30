@@ -3,8 +3,7 @@ Genthetic uses LLMs to generate synthetic data from user-defined schemas. To use
 Basic Example:
 
 ```typescript
-import { z } from "zod";
-import { Genthetic } from "genthetic";
+import { Genthetic, z } from "genthetic";
 
 // Initialize Genthetic
 const g = new Genthetic();

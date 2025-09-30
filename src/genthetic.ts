@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "genkit";
 import { toJsonSchema } from "genkit/schema";
 import { generateSyntheticData } from "./generate.js";
 import { writeFileSync } from "node:fs";
@@ -39,7 +39,7 @@ function writeData(file: string | undefined, data: any[]) {
 export async function resolveObject<T, I = any, C = any>(
   obj: T,
   item?: I,
-  context?: C
+  context?: C,
 ): Promise<T> {
   if (obj === null || typeof obj !== "object") {
     return obj;
@@ -54,7 +54,7 @@ export async function resolveObject<T, I = any, C = any>(
           return await resolveObject(arrayItem, item, context);
         }
         return arrayItem;
-      })
+      }),
     )) as unknown as T;
   }
 
@@ -108,7 +108,7 @@ export interface GenerateOptions {
 
 export type StageFn<T extends object = Record<string, any>> = (
   batch: Partial<T>[],
-  context: StageContext<T>
+  context: StageContext<T>,
 ) => Partial<WithHints<T>>[] | Promise<Partial<WithHints<T>>[]>;
 
 export interface Stage<T extends object = Record<string, any>> {
@@ -170,7 +170,7 @@ export class TypeDefinition<T extends object = Record<string, any>> {
 
   constructor(
     private readonly options: TypeDefinitionOptions,
-    private readonly genthetic: Genthetic
+    private readonly genthetic: Genthetic,
   ) {
     this.name = options.name;
     this.zodSchema = options.schema;
@@ -192,7 +192,7 @@ export class TypeDefinition<T extends object = Record<string, any>> {
   fill(shape: FillShape<T>): this;
   fill(
     nameOrShape: string | Partial<Record<keyof T, any>>,
-    shapeArg?: FillShape<T> | Record<string, any>
+    shapeArg?: FillShape<T> | Record<string, any>,
   ): this {
     // Handle the different parameter combinations
     let shape: Partial<Record<keyof T, any>>;
@@ -214,7 +214,7 @@ export class TypeDefinition<T extends object = Record<string, any>> {
           // Resolve the shape object to get all function values resolved
           const resolvedShape = await resolveObject(shape, item, context);
           return resolveObject(resolvedShape, item, context);
-        })
+        }),
       );
     };
 
@@ -245,7 +245,7 @@ export class TypeDefinition<T extends object = Record<string, any>> {
 
         return batch.map((item, i) => ({ ...item, ...generatedData[i] }));
       },
-      { cacheOutput: !!options?.unique }
+      { cacheOutput: !!options?.unique },
     );
     return this;
   }
@@ -258,7 +258,7 @@ export class TypeDefinition<T extends object = Record<string, any>> {
   stage(
     nameOrFn?: string | StageFn<T>,
     fnOrOptions?: StageFn<T> | { cacheOutput?: boolean },
-    optionsArg?: { cacheOutput?: boolean }
+    optionsArg?: { cacheOutput?: boolean },
   ): this {
     // Handle the different parameter combinations
     let name: string | undefined;
@@ -330,7 +330,7 @@ export class Genthetic {
    */
   synthesize<T extends object>(
     typeDefinition: TypeDefinition<T>,
-    options: SynthesizeOptions = {}
+    options: SynthesizeOptions = {},
   ): SynthesisJob<T> {
     // Determine batch size and logging level
     const batchSize = options.batchSize || typeDefinition.defaultBatchSize || 10;
@@ -391,7 +391,7 @@ export class Genthetic {
      */
     const processBatch = async (
       batchNumber: number,
-      cachedOutputs: Partial<WithHints<T>>[][]
+      cachedOutputs: Partial<WithHints<T>>[][],
     ): Promise<Partial<WithHints<T>>[]> => {
       const isLastBatch = batchNumber === totalBatches - 1;
       const currentBatchSize = isLastBatch ? totalCount - batchNumber * batchSize : batchSize;
@@ -410,7 +410,7 @@ export class Genthetic {
         console.log(
           `\x1b[34m🔄 [Genthetic] Batch ${
             batchNumber + 1
-          }/${totalBatches} started (${percentComplete}% complete, ${itemsGenerated} items generated so far, total time: ${totalElapsedSeconds}s)\x1b[0m`
+          }/${totalBatches} started (${percentComplete}% complete, ${itemsGenerated} items generated so far, total time: ${totalElapsedSeconds}s)\x1b[0m`,
         );
       }
 
@@ -453,7 +453,7 @@ export class Genthetic {
               console.log(
                 `\x1b[36m💾 [Genthetic] Cached output for stage ${stageIndex + 1} (${
                   cachedOutputs[stageIndex].length
-                } items total)\x1b[0m`
+                } items total)\x1b[0m`,
               );
             }
           }
@@ -462,13 +462,13 @@ export class Genthetic {
           if (loggingLevel === "debug") {
             const stageName = stage.name || `Stage ${stageIndex + 1}`;
             const percentComplete = Math.round(
-              ((stageIndex + 1) / typeDefinition.stages.length) * 100
+              ((stageIndex + 1) / typeDefinition.stages.length) * 100,
             );
             const stageTime = ((Date.now() - progressController.batchStartTime) / 1000).toFixed(2);
             console.log(
               `\x1b[36m🔧 [Genthetic] Batch ${
                 batchNumber + 1
-              }/${totalBatches} - ${stageName} completed (${percentComplete}% of batch processing, batch time so far: ${stageTime}s)\x1b[0m`
+              }/${totalBatches} - ${stageName} completed (${percentComplete}% of batch processing, batch time so far: ${stageTime}s)\x1b[0m`,
             );
           }
         } catch (error) {
@@ -478,7 +478,7 @@ export class Genthetic {
             console.log(
               `\x1b[33m⚠️ [Genthetic] WARNING: Error in Batch ${
                 batchNumber + 1
-              }/${totalBatches} - ${stageName} - retry would be needed\x1b[0m`
+              }/${totalBatches} - ${stageName} - retry would be needed\x1b[0m`,
             );
           }
           throw error; // Re-throw the error to be handled by the throttler if applicable
@@ -500,7 +500,7 @@ export class Genthetic {
             batchNumber + 1
           }/${totalBatches} completed in ${batchTime}s (${percentComplete}% complete, ${
             isLastBatch ? totalCount : itemsGenerated
-          } items generated so far, total time: ${totalTime}s)\x1b[0m`
+          } items generated so far, total time: ${totalTime}s)\x1b[0m`,
         );
       }
 
@@ -513,7 +513,7 @@ export class Genthetic {
     const processBatchResults = (
       batchNumber: number,
       batch: Partial<WithHints<T>>[],
-      results: Partial<WithHints<T>>[]
+      results: Partial<WithHints<T>>[],
     ): void => {
       // Add batch results to total results
       results.push(...batch);
@@ -543,7 +543,7 @@ export class Genthetic {
         // Serial processing mode - required when any stage has cacheOutput: true
         if (loggingLevel === "info" || loggingLevel === "debug") {
           console.log(
-            `\x1b[34m🔄 [Genthetic] Using serial processing mode (cacheOutput required)\x1b[0m`
+            `\x1b[34m🔄 [Genthetic] Using serial processing mode (cacheOutput required)\x1b[0m`,
           );
         }
 
@@ -557,7 +557,7 @@ export class Genthetic {
         const concurrency = options.concurrency ?? 5;
         if (loggingLevel === "info" || loggingLevel === "debug") {
           console.log(
-            `\x1b[34m🔄 [Genthetic] Using parallel processing mode (concurrency: ${concurrency})\x1b[0m`
+            `\x1b[34m🔄 [Genthetic] Using parallel processing mode (concurrency: ${concurrency})\x1b[0m`,
           );
         }
 
@@ -589,7 +589,7 @@ export class Genthetic {
       if (loggingLevel !== "none") {
         const totalTime = ((Date.now() - progressController.startTime) / 1000).toFixed(2);
         console.log(
-          `\x1b[35m🎉 [Genthetic] Synthesis complete! Generated ${totalCount} items in ${totalTime}s\x1b[0m`
+          `\x1b[35m🎉 [Genthetic] Synthesis complete! Generated ${totalCount} items in ${totalTime}s\x1b[0m`,
         );
       }
 

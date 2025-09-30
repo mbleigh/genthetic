@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { Genthetic } from "../src/genthetic.js";
-import { z } from "zod";
+import { z } from "genkit";
 
 describe("Genthetic", () => {
   it("should create a simple type definition", () => {

@@ -1,5 +1,4 @@
-import { Genthetic } from "../src/index.js";
-import { z } from "zod";
+import { Genthetic, z } from "../src/index.js";
 import { toKebabCase } from "./utils.js";
 import { faker } from "@faker-js/faker";
 
@@ -67,7 +66,7 @@ const MovieSynth = synth
     batch.map((item) => ({
       ...item,
       id: toKebabCase(item.title || ""),
-    }))
+    })),
   );
 
 // Main function to run the example

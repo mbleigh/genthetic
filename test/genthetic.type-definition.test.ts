@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { Genthetic } from "../src/genthetic.js";
-import { z } from "zod";
+import { z } from "genkit";
 
 describe("TypeDefinition", () => {
   it("should allow calling .synthesize() directly", async () => {

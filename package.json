@@ -1,6 +1,6 @@
 {
   "name": "genthetic",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Synthetic data generation combining GenAI and good old-fashioned coding.",
   "type": "module",
   "main": "dist/index.js",
@@ -26,9 +26,6 @@
     "@genkit-ai/google-genai": "^1.20.0",
     "genkit": "^1.20.0"
   },
-  "peerDependencies": {
-    "zod": "^3.24.2"
-  },
   "devDependencies": {
     "@faker-js/faker": "^9.6.0",
     "@types/node": "^22.13.10",
@@ -36,12 +33,6 @@
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "tsconfig.json"
-  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",

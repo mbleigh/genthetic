@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { Genthetic } from "../src/genthetic.ts";
+import { Genthetic, z } from "../src/genthetic.ts";
 
 const g = new Genthetic();
 

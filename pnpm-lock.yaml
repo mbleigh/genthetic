@@ -14,9 +14,6 @@ importers:
       genkit:
         specifier: ^1.20.0
         version: 1.20.0(@google-cloud/firestore@7.11.6)(firebase-admin@13.5.0)
-      zod:
-        specifier: ^3.24.2
-        version: 3.24.2
     devDependencies:
       '@faker-js/faker':
         specifier: ^9.6.0
